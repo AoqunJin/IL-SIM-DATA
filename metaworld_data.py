@@ -152,7 +152,7 @@ def collect_demos(env_names: List[str], envs: List[Type], policy_names: List[str
         make_folder("video")
 
     # process bar 
-    pbar = tqdm(total=num_workers)
+    pbar = tqdm(total=len(env_names))
     pbar.set_description(f"Total {len(env_names)} environment")
     update = lambda *x: pbar.update()
     
