@@ -88,8 +88,14 @@ def save_state(tag: str, data: Any):
         tag (str): Name of the file (without extension) to save the data.
         data: Data to be saved.
     """
-    with open(os.path.join(args.data_dir, f"state/{tag}.bin"), "wb") as f:
-        pickle.dump(data, f)
+    # with open(os.path.join(args.data_dir, f"state/{tag}.bin"), "wb") as f:
+    #     pickle.dump(data, f)
+
+    for key in ["obss", "acts", "rews"]:
+        np.savez_compressed(
+            os.path.join(args.data_dir, f"state/{tag}-{key}"),
+            np.array(data[key])
+        )
 
 
 def write_video(tag, fps, res):
@@ -107,10 +113,10 @@ def collect_trail(env, policy, env_name: str, out_state: bool, use_rgb: bool,
     flip = False  # TODO flip automatic
     for trail in range(num_trail):
         obs = env.reset()
+        tag = env_name + f"-{trail}"
         if out_state:
             obss, acts, rews = [], [], []
         if out_video:
-            tag = env_name + f"-{trail}"
             writer = write_video(tag, env.metadata["video.frames_per_second"], resolution)
 
         for i in range(num_step):
@@ -124,8 +130,10 @@ def collect_trail(env, policy, env_name: str, out_state: bool, use_rgb: bool,
                 obss.append(obs)
             
             # video
-            if out_video and not use_rgb:  # render first time
-                obs = env.sim.render(*resolution, mode="offscreen", camera_name=camera_name)[:,:,::-1]
+            if out_video:
+                if not out_state or not use_rgb:  # render first time
+                    obs = env.sim.render(*resolution, mode="offscreen", camera_name=camera_name)[:,:,::-1]
+
                 if flip: obs = cv2.rotate(obs, cv2.ROTATE_180)
                 writer.write(obs)     
                        
@@ -135,11 +143,15 @@ def collect_trail(env, policy, env_name: str, out_state: bool, use_rgb: bool,
             if out_state:
                 acts.append(act)
                 rews.append(rew)
-                save_state(tag, {"obss": obss, "acts": acts, "rews": rews})
 
-            if done:
+            if info['success'] or done:
                 break
-
+            
+        if out_state:
+            save_state(tag, {"obss": obss, "acts": acts, "rews": rews})
+            del obss, acts, rews
+        if out_video:
+            del writer
 
 def collect_demos(env_names: List[str], envs: List[Type], policy_names: List[str], 
                   out_state: bool, use_rgb: bool, resolution: tuple = (224, 224), 
@@ -152,7 +164,7 @@ def collect_demos(env_names: List[str], envs: List[Type], policy_names: List[str
         make_folder("video")
 
     # process bar 
-    pbar = tqdm(total=num_workers)
+    pbar = tqdm(total=len(env_names))
     pbar.set_description(f"Total {len(env_names)} environment")
     update = lambda *x: pbar.update()
     
@@ -176,6 +188,8 @@ def collect_demos(env_names: List[str], envs: List[Type], policy_names: List[str
                   out_video, num_trail, num_step),
             callback=update
         )
+        # collect_trail(env, policy, env_name, out_state, use_rgb, resolution, camera_name, 
+        #           out_video, num_trail, num_step)
 
     pool.close()
     pool.join()
@@ -227,3 +241,4 @@ if __name__ == "__main__":
                   num_workers=args.num_workers)
     
     logging.info("All finished!")
+    
